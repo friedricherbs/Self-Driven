@@ -57,7 +57,7 @@ class WaypointUpdater(object):
             final_waypoints_msg = Lane()
             final_waypoints_msg.header.frame_id = '/world'
             final_waypoints_msg.header.stamp = rospy.Time(0)
-            final_waypoints_msg.waypoints = waypoints.waypoints[next_wp_i:next_wp_i+LOOKAHEAD_WPS]
+            final_waypoints_msg.waypoints = next_waypoints
             self.final_waypoints_pub.publish(final_waypoints_msg)
 
     def traffic_cb(self, msg):
@@ -85,7 +85,7 @@ class WaypointUpdater(object):
     def closest_waypoint(self, pose, waypoints):
         closest_len = 100000
         closest_wp_i = 0
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+        dl = lambda a, b: (a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2
         for i in range(len(waypoints)):
             dist = dl(pose.position, waypoints[i].pose.pose.position)
             if (dist < closest_len):
