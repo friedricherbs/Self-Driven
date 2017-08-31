@@ -6,6 +6,7 @@ from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
 from geometry_msgs.msg import TwistStamped, PoseStamped
 # from styx_msgs.msg import Lane, Waypoint
 import math
+import random
 
 from twist_controller import Controller
 
@@ -32,6 +33,8 @@ that we have created in the `__init__` function.
 
 '''
 
+DEBUG = False
+
 class DBWNode(object):
     def __init__(self):
         rospy.init_node('dbw_node')
@@ -48,11 +51,11 @@ class DBWNode(object):
         max_steer_angle = rospy.get_param('~max_steer_angle', 8.)
 
         self.steer_pub = rospy.Publisher('/vehicle/steering_cmd',
-                                         SteeringCmd, queue_size=5)
+                                         SteeringCmd, queue_size=1)
         self.throttle_pub = rospy.Publisher('/vehicle/throttle_cmd',
-                                            ThrottleCmd, queue_size=5)
+                                            ThrottleCmd, queue_size=1)
         self.brake_pub = rospy.Publisher('/vehicle/brake_cmd',
-                                         BrakeCmd, queue_size=5)
+                                         BrakeCmd, queue_size=1)
 
         # TODO: Create `TwistController` object
         self.controller = Controller(vehicle_mass, fuel_capacity, brake_deadband, decel_limit, accel_limit, wheel_radius, wheel_base,
@@ -72,8 +75,7 @@ class DBWNode(object):
         self.loop()
 
     def loop(self):
-        rate = rospy.Rate(50) # 50Hz
-        
+        rate = rospy.Rate(10) # 50Hz        
         
         while not rospy.is_shutdown():
             time_elapsed = rospy.rostime.get_time() - self.time_last_sample
@@ -87,6 +89,8 @@ class DBWNode(object):
                                                                     time_elapsed,
                                                                     self.dbw_enabled)
                 if self.dbw_enabled == True:
+                  if DEBUG:
+                    rospy.logerr('throttle: {}, brake: {}'.format(throttle, brake))
                   self.publish(throttle, brake, steer)
             rate.sleep()
 

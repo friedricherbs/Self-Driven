@@ -23,8 +23,8 @@ class Controller(object):
         self.max_lat_accel = args[8]
         self.max_steer_angle = args[9]
 
-        self.pid_velocity = PID(0.6, 0.05, 0.1)
-        self.pid_steering = PID(6.0, 0.3, 1.0)
+        self.pid_velocity = PID(0.6, 0.0, 0.1)
+        self.pid_steering = PID(6.0, 0.0, 1.0)
 
 
     def control(self, *args, **kwargs):
@@ -54,7 +54,7 @@ class Controller(object):
         	rospy.logerr('ctrl steer: {}'.format(steer))
 
         throttle = max(velocity, 0.0)
-        brake = math.fabs(min(0.0, velocity))
+        brake = math.fabs(min(0.0, velocity)) * 20000 # TODO: tune this multiplier or find a better way...
 
         # Return throttle, brake, steer
         return throttle, brake, steer

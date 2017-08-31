@@ -28,6 +28,7 @@ DEBUG = False
 class WaypointUpdater(object):
     def __init__(self):
         self.cur_pose = None
+        self.base_waypoints = None
         self.next_waypoints = None
 
         rospy.init_node('waypoint_updater')
@@ -39,26 +40,34 @@ class WaypointUpdater(object):
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
         # TODO: Add other member variables you need below
 
+        self.publish()
+
         rospy.spin()
+
+    def publish(self):
+        rate = rospy.Rate(40)
+        while not rospy.is_shutdown():
+            if (self.cur_pose is not None) and (self.base_waypoints is not None):
+                wp_base_size = len(self.base_waypoints.waypoints)
+                # rospy.loginfo('wp_base_size: {}'.format(wp_base_size)) # 10902 wps at start
+                next_wp_i = self.next_waypoint(self.cur_pose.pose, self.base_waypoints.waypoints)
+                next_waypoints = self.base_waypoints.waypoints[next_wp_i:next_wp_i+LOOKAHEAD_WPS]
+
+                # publish
+                final_waypoints_msg = Lane()
+                final_waypoints_msg.header.frame_id = '/world'
+                final_waypoints_msg.header.stamp = rospy.Time(0)
+                final_waypoints_msg.waypoints = next_waypoints
+                self.final_waypoints_pub.publish(final_waypoints_msg)
+            rate.sleep()
 
     def pose_cb(self, msg):
         # TODO: Implement
         self.cur_pose = msg
-
-    def waypoints_cb(self, waypoints):
+    
+    def waypoints_cb(self, msg):
         # TODO: Implement
-        if self.cur_pose is not None:
-            wp_base_size = len(waypoints.waypoints)
-            # rospy.loginfo('wp_base_size: {}'.format(wp_base_size)) # 10902 wps at start
-            next_wp_i = self.next_waypoint(self.cur_pose.pose, waypoints.waypoints)
-            next_waypoints = waypoints.waypoints[next_wp_i:next_wp_i+LOOKAHEAD_WPS]
-
-            # publish
-            final_waypoints_msg = Lane()
-            final_waypoints_msg.header.frame_id = '/world'
-            final_waypoints_msg.header.stamp = rospy.Time(0)
-            final_waypoints_msg.waypoints = next_waypoints
-            self.final_waypoints_pub.publish(final_waypoints_msg)
+        self.base_waypoints = msg
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
