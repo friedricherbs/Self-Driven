@@ -48,14 +48,17 @@ class TLDetector(object):
 
         rospy.spin()
 
+            
     def pose_cb(self, msg):
         self.pose = msg
 
     def waypoints_cb(self, waypoints):
-        self.waypoints = waypoints
+        self.waypoints = waypoints.waypoints
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
+        # rospy.loginfo('nb lights:{} first light state:{}'.format(len(self.lights), self.lights[0].state))
+        
 
     def image_cb(self, msg):
         """Identifies red lights in the incoming camera image and publishes the index
@@ -98,7 +101,17 @@ class TLDetector(object):
 
         """
         #TODO implement
-        return 0
+        waypoints = self.waypoints
+        closest_len = 100000
+        closest_wp_i = 0
+        dl = lambda a, b: (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+        for i in range(len(waypoints)):
+            dist = dl(pose, waypoints[i].pose.pose.position)
+            if dist < closest_len:
+                closest_len = dist
+                closest_wp_i = i
+        return closest_wp_i
+
 
 
     def project_to_image_plane(self, point_in_world):
@@ -160,7 +173,8 @@ class TLDetector(object):
         #TODO use light location to zoom in on traffic light in image
 
         #Get classification
-        return self.light_classifier.get_classification(cv_image)
+        #return self.light_classifier.get_classification(cv_image)
+        return light.state
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -174,9 +188,27 @@ class TLDetector(object):
         light = None
         light_positions = config.light_positions
         if(self.pose):
-            car_position = self.get_closest_waypoint(self.pose.pose)
+            car_position = self.get_closest_waypoint(self.pose.pose.position)
 
         #TODO find the closest visible traffic light (if one exists)
+        first = 1
+
+        class Point:
+            def __init__(self, t):
+                self.x = t[0]
+                self.y = t[1]
+            
+        for i in range(len(light_positions)):
+            
+            light_waypoint = self.get_closest_waypoint(Point(light_positions[i]))
+            if first and light_waypoint >= car_position:
+                first = 0
+                light_wp = light_waypoint
+                light = self.lights[i]
+            elif light_waypoint >= car_position and light_waypoint < light_wp:
+                light_wp = light_waypoint
+                light = self.lights[i]
+        
 
         if light:
             state = self.get_light_state(light)
