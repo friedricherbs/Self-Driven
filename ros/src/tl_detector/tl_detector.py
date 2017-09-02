@@ -123,6 +123,32 @@ class TLDetector(object):
         return closest_wp_i
 
 
+    # Calculates Rotation Matrix given euler angles.
+    def eulerAnglesToRotationMatrix(self, theta) :
+        # See https://www.learnopencv.com/rotation-matrix-to-euler-angles/
+         
+        R_x = np.array([[1,         0,                  0                   ],
+                        [0,         math.cos(theta[0]), -math.sin(theta[0]) ],
+                        [0,         math.sin(theta[0]), math.cos(theta[0])  ]
+                        ])
+             
+             
+                         
+        R_y = np.array([[math.cos(theta[1]),    0,      math.sin(theta[1])  ],
+                        [0,                     1,      0                   ],
+                        [-math.sin(theta[1]),   0,      math.cos(theta[1])  ]
+                        ])
+                     
+        R_z = np.array([[math.cos(theta[2]),    -math.sin(theta[2]),    0],
+                        [math.sin(theta[2]),    math.cos(theta[2]),     0],
+                        [0,                     0,                      1]
+                        ])
+                         
+                         
+        R = np.dot(R_z, np.dot( R_y, R_x ))
+     
+        return R
+
 
     def project_to_image_plane(self, point_in_world):
         """Project point from 3D world coordinates to 2D camera image location
@@ -155,23 +181,18 @@ class TLDetector(object):
             rospy.logerr("Failed to find camera to map transform")
 
         #TODO Use tranform and rotation to calculate 2D position of light in image
-        pose_quaternion = (self.pose.pose.orientation.x, self.pose.pose.orientation.y, self.pose.pose.orientation.z, self.pose.pose.orientation.w)
-        (_, _, yaw) = tf.transformations.euler_from_quaternion(pose_quaternion)
+        (roll, pitch, yaw) = tf.transformations.euler_from_quaternion(rot)
 
-        x_ego   = self.pose.pose.position.x
-        y_ego   = self.pose.pose.position.y
-        x_trans = point_in_world.x - x_ego
-        y_trans = point_in_world.y - y_ego
+        # Convert to rotation matrix
+        theta   = (roll, pitch, yaw)
+        R       = self.eulerAnglesToRotationMatrix(theta)
 
-        sin_yaw = math.sin(yaw)
-        cos_yaw = math.cos(yaw)
-        x_veh   =  x_trans * cos_yaw + y_trans * sin_yaw 
-        y_veh   = -x_trans * sin_yaw + y_trans * cos_yaw 
+        # Convert to Rodriguez angles
+        rvec, _ = cv2.Rodrigues(R) 
+        tvec    = trans
 
 
-        objectPoints = np.array([[float(x_veh), float(y_veh), 0.0]], dtype=np.float32)
-        rvec         = (0,0,0)
-        tvec         = (0,0,0)
+        objectPoints = np.array([[float(point_in_world.x), float(point_in_world.y), float(point_in_world.z)]], dtype=np.float32) 
 
         cameraMatrix = np.array([[fx, 0,  image_width/2],
                                  [0,  fy, image_height/2],
@@ -184,13 +205,11 @@ class TLDetector(object):
         y = int(imgCoords[0,0,1])
 
         if DEBUG:
-          rospy.loginfo('x_ego: {}, y_ego: {}'.format(x_ego, y_ego))
-          rospy.loginfo('point_x: {}, point_y: {}'.format(point_in_world.x, point_in_world.y))
-          rospy.loginfo('x_veh: {}, y_veh: {}'.format(x_veh, y_veh))
+          rospy.loginfo('trans: {}'.format(trans))
+          rospy.loginfo('rot: {}'.format(rot))
+          rospy.loginfo('theta: {}'.format(theta))
+          rospy.loginfo('point_x: {}, point_y: {} point_z: {}'.format(point_in_world.x, point_in_world.y, point_in_world.z))
           rospy.loginfo('x_img: {}, y_img: {}'.format(x, y))
-
-        x = 0
-        y = 0
 
         return (x, y)
 
