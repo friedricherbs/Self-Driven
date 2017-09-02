@@ -9,10 +9,13 @@ from cv_bridge import CvBridge
 from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
+import math
+import numpy as np
 from traffic_light_config import config
 
 STATE_COUNT_THRESHOLD = 3
-DEBUG = False
+MAX_DIST              = 100.0
+DEBUG                 = False
 
 class Point:
     def __init__(self, t):
@@ -63,7 +66,8 @@ class TLDetector(object):
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
-        # rospy.loginfo('nb lights:{} first light state:{}'.format(len(self.lights), self.lights[0].state))
+        #if DEBUG:
+            #rospy.loginfo('nb lights:{} first light state:{}'.format(len(self.lights), self.lights[0].state))
         
 
     def image_cb(self, msg):
@@ -151,6 +155,39 @@ class TLDetector(object):
             rospy.logerr("Failed to find camera to map transform")
 
         #TODO Use tranform and rotation to calculate 2D position of light in image
+        pose_quaternion = (self.pose.pose.orientation.x, self.pose.pose.orientation.y, self.pose.pose.orientation.z, self.pose.pose.orientation.w)
+        (_, _, yaw) = tf.transformations.euler_from_quaternion(pose_quaternion)
+
+        x_ego   = self.pose.pose.position.x
+        y_ego   = self.pose.pose.position.y
+        x_trans = point_in_world.x - x_ego
+        y_trans = point_in_world.y - y_ego
+
+        sin_yaw = math.sin(yaw)
+        cos_yaw = math.cos(yaw)
+        x_veh   =  x_trans * cos_yaw + y_trans * sin_yaw 
+        y_veh   = -x_trans * sin_yaw + y_trans * cos_yaw 
+
+
+        objectPoints = np.array([[float(x_veh), float(y_veh), 0.0]], dtype=np.float32)
+        rvec         = (0,0,0)
+        tvec         = (0,0,0)
+
+        cameraMatrix = np.array([[fx, 0,  image_width/2],
+                                 [0,  fy, image_height/2],
+                                 [0,  0,  1]])
+        
+        distCoeffs = None
+        imgCoords, _ = cv2.projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs)
+
+        x = int(imgCoords[0,0,0])
+        y = int(imgCoords[0,0,1])
+
+        if DEBUG:
+          rospy.loginfo('x_ego: {}, y_ego: {}'.format(x_ego, y_ego))
+          rospy.loginfo('point_x: {}, point_y: {}'.format(point_in_world.x, point_in_world.y))
+          rospy.loginfo('x_veh: {}, y_veh: {}'.format(x_veh, y_veh))
+          rospy.loginfo('x_img: {}, y_img: {}'.format(x, y))
 
         x = 0
         y = 0
@@ -191,32 +228,41 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        light = None
+        light           = None
         light_positions = config.light_positions
+        light_distance  = 10000*MAX_DIST
+
         if(self.pose):
             car_position = self.get_closest_waypoint(self.pose.pose.position)
 
             #TODO find the closest visible traffic light (if one exists)
             first = True
                 
-            for i in range(len(light_positions)):
+            for i, light_pos in enumerate(light_positions):
                 
-                light_waypoint = self.get_closest_waypoint(Point(light_positions[i]))
+                light_point    = Point(light_pos)
+                light_waypoint = self.get_closest_waypoint(light_point)
                 if first and light_waypoint >= car_position:
                     first = False
                     light_wp = light_waypoint
                     light = self.lights[i]
+                    light_distance = math.sqrt( (light_point.x-self.pose.pose.position.x)**2 + (light_point.y-self.pose.pose.position.y)**2 )
                 elif light_waypoint >= car_position and light_waypoint < light_wp:
                     light_wp = light_waypoint
                     light = self.lights[i]
+                    light_distance = math.sqrt( (light_point.x-self.pose.pose.position.x)**2 + (light_point.y-self.pose.pose.position.y)**2 )
         
 
         if light:
             if DEBUG:
                 rospy.loginfo('light_wp: {}'.format(light_wp))
 
-            state = self.get_light_state(light)
-            return light_wp, state
+            if (light_distance >= MAX_DIST):
+                return -1, TrafficLight.UNKNOWN
+            else:
+                state = self.get_light_state(light)
+                return light_wp, state
+
         self.waypoints = None
         return -1, TrafficLight.UNKNOWN
 
