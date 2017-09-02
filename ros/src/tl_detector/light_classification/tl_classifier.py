@@ -29,6 +29,6 @@ class TLClassifier(object):
         color_detection = cv2.countNonZero(mask)
 
         if color_detection > self.num_pixels:
-            state = TrafficLight.RED
+            color = TrafficLight.RED
 
-        return state
+        return color
