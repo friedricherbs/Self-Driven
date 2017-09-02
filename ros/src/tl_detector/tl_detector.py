@@ -12,6 +12,12 @@ import cv2
 from traffic_light_config import config
 
 STATE_COUNT_THRESHOLD = 3
+DEBUG = False
+
+class Point:
+    def __init__(self, t):
+        self.x = t[0]
+        self.y = t[1]
 
 class TLDetector(object):
     def __init__(self):
@@ -190,27 +196,25 @@ class TLDetector(object):
         if(self.pose):
             car_position = self.get_closest_waypoint(self.pose.pose.position)
 
-        #TODO find the closest visible traffic light (if one exists)
-        first = 1
-
-        class Point:
-            def __init__(self, t):
-                self.x = t[0]
-                self.y = t[1]
-            
-        for i in range(len(light_positions)):
-            
-            light_waypoint = self.get_closest_waypoint(Point(light_positions[i]))
-            if first and light_waypoint >= car_position:
-                first = 0
-                light_wp = light_waypoint
-                light = self.lights[i]
-            elif light_waypoint >= car_position and light_waypoint < light_wp:
-                light_wp = light_waypoint
-                light = self.lights[i]
+            #TODO find the closest visible traffic light (if one exists)
+            first = True
+                
+            for i in range(len(light_positions)):
+                
+                light_waypoint = self.get_closest_waypoint(Point(light_positions[i]))
+                if first and light_waypoint >= car_position:
+                    first = False
+                    light_wp = light_waypoint
+                    light = self.lights[i]
+                elif light_waypoint >= car_position and light_waypoint < light_wp:
+                    light_wp = light_waypoint
+                    light = self.lights[i]
         
 
         if light:
+            if DEBUG:
+                rospy.loginfo('light_wp: {}'.format(light_wp))
+
             state = self.get_light_state(light)
             return light_wp, state
         self.waypoints = None
