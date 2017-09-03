@@ -215,6 +215,13 @@ class TLDetector(object):
 
         return (x, y)
 
+    def check_inside_image(self, x, y):
+        inside = ( (x is not None) and (y is not None)  
+                   and (x > 0)         and (x <= config.camera_info.image_width)
+                   and (y > 0)         and (x <= config.camera_info.image_height) )
+
+        return inside
+
     def get_light_state(self, light):
         """Determines the current color of the traffic light
 
@@ -235,10 +242,26 @@ class TLDetector(object):
         x, y = self.project_to_image_plane(light.pose.pose.position)
 
         #TODO use light location to zoom in on traffic light in image
+        w_img = 200
+        h_img = 50
+
+        top    = 20
+        bottom = y + h_img
+        left   = x - w_img
+        right  = x + w_img
+
+        tlState = TrafficLight.UNKNOWN
+        if self.check_inside_image(left,top) and self.check_inside_image(bottom, right):
+            roi = cv_image[top:bottom, left:right]
+            #self.deb_img.publish(self.bridge.cv2_to_imgmsg(crop, "bgr8"))
+            tlState = self.light_classifier.get_classification(roi)
 
         #Get classification
-        #return self.light_classifier.get_classification(cv_image)
-        return light.state
+        if DEBUG:
+            rospy.loginfo('tlState: {}'.format(tlState))
+
+        return tlState
+
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -249,9 +272,9 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        light           = None
-        light_positions = config.light_positions
-        light_distance  = 10000*MAX_DIST
+        light                   = None
+        light_positions         = config.light_positions
+        light_distance_squared  = 10000*MAX_DIST
 
         if(self.pose):
             car_position = self.get_closest_waypoint(self.pose.pose.position)
@@ -267,18 +290,18 @@ class TLDetector(object):
                     first = False
                     light_wp = light_waypoint
                     light = self.lights[i]
-                    light_distance = math.sqrt( (light_point.x-self.pose.pose.position.x)**2 + (light_point.y-self.pose.pose.position.y)**2 )
+                    light_distance_squared = (light_point.x-self.pose.pose.position.x)**2 + (light_point.y-self.pose.pose.position.y)**2
                 elif light_waypoint >= car_position and light_waypoint < light_wp:
                     light_wp = light_waypoint
                     light = self.lights[i]
-                    light_distance = math.sqrt( (light_point.x-self.pose.pose.position.x)**2 + (light_point.y-self.pose.pose.position.y)**2 )
+                    light_distance_squared = (light_point.x-self.pose.pose.position.x)**2 + (light_point.y-self.pose.pose.position.y)**2
         
 
         if light:
             if DEBUG:
                 rospy.loginfo('light_wp: {}'.format(light_wp))
 
-            if (light_distance >= MAX_DIST):
+            if (light_distance_squared >= MAX_DIST*MAX_DIST):
                 return -1, TrafficLight.UNKNOWN
             else:
                 state = self.get_light_state(light)
