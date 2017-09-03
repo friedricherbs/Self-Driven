@@ -111,15 +111,17 @@ class TLDetector(object):
 
         """
         #TODO implement
-        waypoints = self.waypoints
         closest_len = 100000
         closest_wp_i = 0
-        dl = lambda a, b: (a.x - b.x) ** 2 + (a.y - b.y) ** 2
-        for i in range(len(waypoints)):
-            dist = dl(pose, waypoints[i].pose.pose.position)
-            if dist < closest_len:
-                closest_len = dist
-                closest_wp_i = i
+
+        if self.waypoints is not None:
+            waypoints = self.waypoints
+            dl = lambda a, b: (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+            for i in range(len(waypoints)):
+                dist = dl(pose, waypoints[i].pose.pose.position)
+                if dist < closest_len:
+                    closest_len = dist
+                    closest_wp_i = i
         return closest_wp_i
 
 
