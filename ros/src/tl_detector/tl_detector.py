@@ -125,33 +125,6 @@ class TLDetector(object):
         return closest_wp_i
 
 
-    # Calculates Rotation Matrix given euler angles.
-    def eulerAnglesToRotationMatrix(self, theta) :
-        # See https://www.learnopencv.com/rotation-matrix-to-euler-angles/
-         
-        R_x = np.array([[1,         0,                  0                   ],
-                        [0,         math.cos(theta[0]), -math.sin(theta[0]) ],
-                        [0,         math.sin(theta[0]), math.cos(theta[0])  ]
-                        ])
-             
-             
-                         
-        R_y = np.array([[math.cos(theta[1]),    0,      math.sin(theta[1])  ],
-                        [0,                     1,      0                   ],
-                        [-math.sin(theta[1]),   0,      math.cos(theta[1])  ]
-                        ])
-                     
-        R_z = np.array([[math.cos(theta[2]),    -math.sin(theta[2]),    0],
-                        [math.sin(theta[2]),    math.cos(theta[2]),     0],
-                        [0,                     0,                      1]
-                        ])
-                         
-                         
-        R = np.dot(R_z, np.dot( R_y, R_x ))
-     
-        return R
-
-
     def project_to_image_plane(self, point_in_world):
         """Project point from 3D world coordinates to 2D camera image location
 
@@ -163,7 +136,8 @@ class TLDetector(object):
             y (int): y coordinate of target point in image
 
         """
-
+        x  = -1 
+        y  = -1
         fx = config.camera_info.focal_length_x
         fy = config.camera_info.focal_length_y
 
@@ -172,6 +146,7 @@ class TLDetector(object):
 
         # get transform between pose of camera and world frame
         trans = None
+        rot   = None
         try:
             now = rospy.Time.now()
             self.listener.waitForTransform("/base_link",
@@ -182,43 +157,34 @@ class TLDetector(object):
         except (tf.Exception, tf.LookupException, tf.ConnectivityException):
             rospy.logerr("Failed to find camera to map transform")
 
-        #TODO Use tranform and rotation to calculate 2D position of light in image
-        (roll, pitch, yaw) = tf.transformations.euler_from_quaternion(rot)
+        if (rot is not None) and (trans is not None):
 
-        # Convert to rotation matrix
-        theta   = (roll, pitch, yaw)
-        R       = self.eulerAnglesToRotationMatrix(theta)
+            #TODO Use tranform and rotation to calculate 2D position of light in image
+            trans_mat = tf.transformations.translation_matrix(trans)
+            rot_mat   = tf.transformations.quaternion_matrix(rot)
 
-        # Convert to Rodriguez angles
-        rvec, _ = cv2.Rodrigues(R) 
-        tvec    = trans
+            M  = np.dot(trans_mat, rot_mat)
+            point_hom = np.array([[point_in_world.x], [point_in_world.y], [point_in_world.z], [1.0]])
+            point_veh = np.dot(M, point_hom)
+            
+            # Transform points to image plane
+            x = -fx * point_veh[1]/point_veh[0] + 0.5*image_width
+            y = -fy * point_veh[2]/point_veh[0] + 0.5*image_height
 
 
-        objectPoints = np.array([[float(point_in_world.x), float(point_in_world.y), float(point_in_world.z)]], dtype=np.float32) 
-
-        cameraMatrix = np.array([[fx, 0,  image_width/2],
-                                 [0,  fy, image_height/2],
-                                 [0,  0,  1]])
-        
-        distCoeffs = None
-        imgCoords, _ = cv2.projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs)
-
-        x = int(imgCoords[0,0,0])
-        y = int(imgCoords[0,0,1])
-
-        if DEBUG:
-          rospy.loginfo('trans: {}'.format(trans))
-          rospy.loginfo('rot: {}'.format(rot))
-          rospy.loginfo('theta: {}'.format(theta))
-          rospy.loginfo('point_x: {}, point_y: {} point_z: {}'.format(point_in_world.x, point_in_world.y, point_in_world.z))
-          rospy.loginfo('x_img: {}, y_img: {}'.format(x, y))
+            if DEBUG:
+              rospy.loginfo('trans: {}'.format(trans))
+              rospy.loginfo('rot: {}'.format(rot))
+              rospy.loginfo('point_x: {}, point_y: {} point_z: {}'.format(point_in_world.x, point_in_world.y, point_in_world.z))
+              rospy.loginfo('point_x_veh: {}, point_y_veh: {} point_z_veh: {}'.format(point_veh[0], point_veh[1], point_veh[2]))
+              rospy.loginfo('x_img: {}, y_img: {}'.format(x, y))
 
         return (x, y)
 
     def check_inside_image(self, x, y):
         inside = ( (x is not None) and (y is not None)  
-                   and (x > 0)         and (x <= config.camera_info.image_width)
-                   and (y > 0)         and (x <= config.camera_info.image_height) )
+                   and (x >= 0)         and (x <= config.camera_info.image_width)
+                   and (y >= 0)         and (x <= config.camera_info.image_height) )
 
         return inside
 
@@ -242,13 +208,16 @@ class TLDetector(object):
         x, y = self.project_to_image_plane(light.pose.pose.position)
 
         #TODO use light location to zoom in on traffic light in image
-        w_img = 200
-        h_img = 50
+        image_width = config.camera_info.image_width
+        image_height = config.camera_info.image_height
 
-        top    = 20
-        bottom = y + h_img
-        left   = x - w_img
-        right  = x + w_img
+        w_img = int(0.15*image_width)
+        h_img = int(image_height/8)
+
+        top    = int(image_height*0.05)
+        bottom = int(y + h_img)
+        left   = int(x - w_img)
+        right  = int(x + w_img)
 
         tlState = TrafficLight.UNKNOWN
         if self.check_inside_image(left,top) and self.check_inside_image(bottom, right):
@@ -276,7 +245,7 @@ class TLDetector(object):
         light_positions         = config.light_positions
         light_distance_squared  = 10000*MAX_DIST
 
-        if(self.pose):
+        if( (self.pose is not None) and (len(self.lights) > 0)):
             car_position = self.get_closest_waypoint(self.pose.pose.position)
 
             #TODO find the closest visible traffic light (if one exists)
@@ -300,6 +269,7 @@ class TLDetector(object):
         if light:
             if DEBUG:
                 rospy.loginfo('light_wp: {}'.format(light_wp))
+
 
             if (light_distance_squared >= MAX_DIST*MAX_DIST):
                 return -1, TrafficLight.UNKNOWN
